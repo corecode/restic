@@ -17,6 +17,7 @@ import (
 	"github.com/restic/restic/internal/hashing"
 	"github.com/restic/restic/internal/pack"
 	"github.com/restic/restic/internal/restic"
+	"github.com/valyala/gozstd"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -97,7 +98,12 @@ func (r *Repository) LoadAndDecrypt(ctx context.Context, buf []byte, t restic.Fi
 	}
 
 	nonce, ciphertext := buf[:r.key.NonceSize()], buf[r.key.NonceSize():]
-	plaintext, err := r.key.Open(ciphertext[:0], nonce, ciphertext, nil)
+	cplaintext, err := r.key.Open(ciphertext[:0], nonce, ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	plaintext, err := gozstd.Decompress(nil, cplaintext)
 	if err != nil {
 		return nil, err
 	}
@@ -174,19 +180,25 @@ func (r *Repository) loadBlob(ctx context.Context, id restic.ID, t restic.BlobTy
 
 		// decrypt
 		nonce, ciphertext := plaintextBuf[:r.key.NonceSize()], plaintextBuf[r.key.NonceSize():]
-		plaintext, err := r.key.Open(ciphertext[:0], nonce, ciphertext, nil)
+		cplaintext, err := r.key.Open(ciphertext[:0], nonce, ciphertext, nil)
 		if err != nil {
 			lastError = errors.Errorf("decrypting blob %v failed: %v", id, err)
 			continue
 		}
 
+		plaintextBuf, err := gozstd.Decompress(nil, cplaintext)
+		if err != nil {
+			lastError = errors.Errorf("decompressing blob %v failed: %v", id, err)
+			continue
+		}
+
 		// check hash
-		if !restic.Hash(plaintext).Equal(id) {
+		if !restic.Hash(plaintextBuf).Equal(id) {
 			lastError = errors.Errorf("blob %v returned invalid hash", id)
 			continue
 		}
 
-		return plaintext, nil
+		return plaintextBuf, nil
 	}
 
 	if lastError != nil {
@@ -221,7 +233,9 @@ func (r *Repository) SaveAndEncrypt(ctx context.Context, t restic.BlobType, data
 		id = &hashedID
 	}
 
-	debug.Log("save id %v (%v, %d bytes)", id, t, len(data))
+	cdata := gozstd.Compress(nil, data)
+
+	debug.Log("save id %v (%v, %d->%d bytes)", id, t, len(data), len(cdata))
 
 	// get buf from the pool
 	ciphertext := getBuf()
@@ -232,7 +246,7 @@ func (r *Repository) SaveAndEncrypt(ctx context.Context, t restic.BlobType, data
 	defer freeBuf(ciphertext)
 
 	// encrypt blob
-	ciphertext = r.key.Seal(ciphertext, nonce, data, nil)
+	ciphertext = r.key.Seal(ciphertext, nonce, cdata, nil)
 
 	// find suitable packer and add blob
 	var pm *packerManager
@@ -288,7 +302,9 @@ func (r *Repository) SaveUnpacked(ctx context.Context, t restic.FileType, p []by
 	nonce := crypto.NewRandomNonce()
 	ciphertext = append(ciphertext, nonce...)
 
-	ciphertext = r.key.Seal(ciphertext, nonce, p, nil)
+	cp := gozstd.Compress(nil, p)
+
+	ciphertext = r.key.Seal(ciphertext, nonce, cp, nil)
 
 	id = restic.Hash(ciphertext)
 	h := restic.Handle{Type: t, Name: id.String()}

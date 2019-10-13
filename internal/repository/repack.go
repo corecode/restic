@@ -10,6 +10,7 @@ import (
 	"github.com/restic/restic/internal/fs"
 	"github.com/restic/restic/internal/pack"
 	"github.com/restic/restic/internal/restic"
+	"github.com/valyala/gozstd"
 )
 
 // Repack takes a list of packs together with a list of blobs contained in
@@ -71,7 +72,12 @@ func Repack(ctx context.Context, repo restic.Repository, packs restic.IDSet, kee
 			}
 
 			nonce, ciphertext := buf[:repo.Key().NonceSize()], buf[repo.Key().NonceSize():]
-			plaintext, err := repo.Key().Open(ciphertext[:0], nonce, ciphertext, nil)
+			cplaintext, err := repo.Key().Open(ciphertext[:0], nonce, ciphertext, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			plaintext, err := gozstd.Decompress(nil, cplaintext)
 			if err != nil {
 				return nil, err
 			}
@@ -80,7 +86,7 @@ func Repack(ctx context.Context, repo restic.Repository, packs restic.IDSet, kee
 			if !id.Equal(entry.ID) {
 				debug.Log("read blob %v/%v from %v: wrong data returned, hash is %v",
 					h.Type, h.ID, tempfile.Name(), id)
-				fmt.Fprintf(os.Stderr, "read blob %v from %v: wrong data returned, hash is %v",
+				fmt.Fprintf(os.Stderr, "read blob %v from %v: wrong data returned, hash is %v\n",
 					h, tempfile.Name(), id)
 			}
 
