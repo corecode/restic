@@ -35,6 +35,7 @@ require (
 	github.com/spf13/cobra v0.0.3
 	github.com/spf13/pflag v1.0.3
 	github.com/stretchr/testify v1.3.0 // indirect
+	github.com/valyala/gozstd v1.6.2
 	golang.org/x/crypto v0.0.0-20190422183909-d864b10871cd
 	golang.org/x/net v0.0.0-20190424024845-afe8014c977f
 	golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
@@ -49,3 +50,5 @@ require (
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )
+
+go 1.13
