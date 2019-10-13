@@ -624,7 +624,7 @@ func (c *Checker) checkTree(id restic.ID, tree *restic.Tree) (errs []error) {
 					continue
 				}
 				blobs = append(blobs, blobID)
-				blobSize, found := c.repo.LookupBlobSize(blobID, restic.DataBlob)
+				blobSize, found := c.repo.LookupStoredBlobSize(blobID, restic.DataBlob)
 				if !found {
 					errs = append(errs, Error{TreeID: id, Err: errors.Errorf("file %q blob %d size could not be found", node.Name, b)})
 				}

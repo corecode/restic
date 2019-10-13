@@ -226,19 +226,16 @@ func TestEnsureFileContent(ctx context.Context, t testing.TB, repo restic.Reposi
 		return
 	}
 
-	content := make([]byte, restic.CiphertextLength(len(file.Content)))
-	pos := 0
+	content := []byte{}
 	for _, id := range node.Content {
-		n, err := repo.LoadBlob(ctx, restic.DataBlob, id, content[pos:])
+		buf, err := repo.LoadBlob(ctx, restic.DataBlob, id, nil)
 		if err != nil {
 			t.Fatalf("error loading blob %v: %v", id.Str(), err)
 			return
 		}
 
-		pos += n
+		content = append(content, buf...)
 	}
-
-	content = content[:pos]
 
 	if string(content) != file.Content {
 		t.Fatalf("%v: wrong content returned, want %q, got %q", filename, file.Content, content)

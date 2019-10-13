@@ -126,16 +126,16 @@ func (r *Repository) sortCachedPacks(blobs []restic.PackedBlob) []restic.PackedB
 }
 
 // loadBlob tries to load and decrypt content identified by t and id from a
-// pack from the backend, the result is stored in plaintextBuf, which must be
-// large enough to hold the complete blob.
-func (r *Repository) loadBlob(ctx context.Context, id restic.ID, t restic.BlobType, plaintextBuf []byte) (int, error) {
+// pack from the backend, the result is stored in plaintextBuf, which might
+// be reallocated if it is too small.
+func (r *Repository) loadBlob(ctx context.Context, id restic.ID, t restic.BlobType, plaintextBuf []byte) ([]byte, error) {
 	debug.Log("load %v with id %v (buf len %v, cap %d)", t, id, len(plaintextBuf), cap(plaintextBuf))
 
 	// lookup packs
 	blobs, found := r.idx.Lookup(id, t)
 	if !found {
 		debug.Log("id %v not found in index", id)
-		return 0, errors.Errorf("id %v not found in repository", id)
+		return plaintextBuf, errors.Errorf("id %v not found in repository", id)
 	}
 
 	// try cached pack files first
@@ -153,7 +153,7 @@ func (r *Repository) loadBlob(ctx context.Context, id restic.ID, t restic.BlobTy
 		h := restic.Handle{Type: restic.DataFile, Name: blob.PackID.String()}
 
 		if uint(cap(plaintextBuf)) < blob.Length {
-			return 0, errors.Errorf("buffer is too small: %v < %v", cap(plaintextBuf), blob.Length)
+			plaintextBuf = make([]byte, blob.Length)
 		}
 
 		plaintextBuf = plaintextBuf[:blob.Length]
@@ -186,16 +186,14 @@ func (r *Repository) loadBlob(ctx context.Context, id restic.ID, t restic.BlobTy
 			continue
 		}
 
-		// move decrypted data to the start of the provided buffer
-		copy(plaintextBuf[0:], plaintext)
-		return len(plaintext), nil
+		return plaintext, nil
 	}
 
 	if lastError != nil {
-		return 0, lastError
+		return plaintextBuf, lastError
 	}
 
-	return 0, errors.Errorf("loading blob %v from %v packs failed", id.Str(), len(blobs))
+	return plaintextBuf, errors.Errorf("loading blob %v from %v packs failed", id.Str(), len(blobs))
 }
 
 // LoadJSONUnpacked decrypts the data and afterwards calls json.Unmarshal on
@@ -209,8 +207,8 @@ func (r *Repository) LoadJSONUnpacked(ctx context.Context, t restic.FileType, id
 	return json.Unmarshal(buf, item)
 }
 
-// LookupBlobSize returns the size of blob id.
-func (r *Repository) LookupBlobSize(id restic.ID, tpe restic.BlobType) (uint, bool) {
+// LookupStoredBlobSize returns the stored (compressed) size of blob id.
+func (r *Repository) LookupStoredBlobSize(id restic.ID, tpe restic.BlobType) (uint, bool) {
 	return r.idx.LookupSize(id, tpe)
 }
 
@@ -669,29 +667,23 @@ func (r *Repository) Close() error {
 	return r.be.Close()
 }
 
-// LoadBlob loads a blob of type t from the repository to the buffer. buf must
-// be large enough to hold the encrypted blob, since it is used as scratch
-// space.
-func (r *Repository) LoadBlob(ctx context.Context, t restic.BlobType, id restic.ID, buf []byte) (int, error) {
+// LoadBlob loads a blob of type t from the repository to the buffer. If buf
+// is not be large enough to hold the encrypted blob, it will be reallocated.
+func (r *Repository) LoadBlob(ctx context.Context, t restic.BlobType, id restic.ID, buf []byte) ([]byte, error) {
 	debug.Log("load blob %v into buf (len %v, cap %v)", id, len(buf), cap(buf))
-	size, found := r.idx.LookupSize(id, t)
+	_, found := r.idx.LookupSize(id, t)
 	if !found {
-		return 0, errors.Errorf("id %v not found in repository", id)
+		return buf, errors.Errorf("id %v not found in repository", id)
 	}
 
-	if cap(buf) < restic.CiphertextLength(int(size)) {
-		return 0, errors.Errorf("buffer is too small for data blob (%d < %d)", cap(buf), restic.CiphertextLength(int(size)))
-	}
-
-	n, err := r.loadBlob(ctx, id, t, buf)
+	buf, err := r.loadBlob(ctx, id, t, buf)
 	if err != nil {
-		return 0, err
+		return buf, err
 	}
-	buf = buf[:n]
 
 	debug.Log("loaded %d bytes into buf %p", len(buf), buf)
 
-	return len(buf), err
+	return buf, err
 }
 
 // SaveBlob saves a blob of type t into the repository. If id is the null id, it
@@ -716,11 +708,10 @@ func (r *Repository) LoadTree(ctx context.Context, id restic.ID) (*restic.Tree, 
 	debug.Log("size is %d, create buffer", size)
 	buf := restic.NewBlobBuffer(int(size))
 
-	n, err := r.loadBlob(ctx, id, restic.TreeBlob, buf)
+	buf, err := r.loadBlob(ctx, id, restic.TreeBlob, buf)
 	if err != nil {
 		return nil, err
 	}
-	buf = buf[:n]
 
 	t := &restic.Tree{}
 	err = json.Unmarshal(buf, t)

@@ -6,7 +6,6 @@
 package fuse
 
 import (
-	"github.com/restic/restic/internal/errors"
 	"github.com/restic/restic/internal/restic"
 
 	"github.com/restic/restic/internal/debug"
@@ -35,15 +34,16 @@ type file struct {
 func newFile(ctx context.Context, root *Root, inode uint64, node *restic.Node) (fusefile *file, err error) {
 	debug.Log("create new file for %v with %d blobs", node.Name, len(node.Content))
 	var bytes uint64
+	var buf []byte
 	sizes := make([]int, len(node.Content))
 	for i, id := range node.Content {
 		size, ok := root.blobSizeCache.Lookup(id)
 		if !ok {
-			var found bool
-			size, found = root.repo.LookupBlobSize(id, restic.DataBlob)
-			if !found {
-				return nil, errors.Errorf("id %v not found in repository", id)
+			buf, err = root.repo.LoadBlob(ctx, restic.DataBlob, id, buf)
+			if err != nil {
+				return nil, err
 			}
+			size = uint(len(buf))
 		}
 
 		sizes[i] = int(size)
@@ -96,15 +96,13 @@ func (f *file) getBlobAt(ctx context.Context, i int) (blob []byte, err error) {
 		f.blobs[j] = nil
 	}
 
-	buf := restic.NewBlobBuffer(f.sizes[i])
-	n, err := f.root.repo.LoadBlob(ctx, restic.DataBlob, f.node.Content[i], buf)
+	f.blobs[i], err = f.root.repo.LoadBlob(ctx, restic.DataBlob, f.node.Content[i], nil)
 	if err != nil {
 		debug.Log("LoadBlob(%v, %v) failed: %v", f.node.Name, f.node.Content[i], err)
 		return nil, err
 	}
-	f.blobs[i] = buf[:n]
 
-	return buf[:n], nil
+	return f.blobs[i], nil
 }
 
 func (f *file) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {

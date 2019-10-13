@@ -44,9 +44,8 @@ func TestSave(t *testing.T) {
 
 		// read back
 		buf := restic.NewBlobBuffer(size)
-		n, err := repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
+		buf, err = repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
 		rtest.OK(t, err)
-		rtest.Equals(t, len(buf), n)
 
 		rtest.Assert(t, len(buf) == len(data),
 			"number of bytes read back does not match: expected %d, got %d",
@@ -78,9 +77,8 @@ func TestSaveFrom(t *testing.T) {
 
 		// read back
 		buf := restic.NewBlobBuffer(size)
-		n, err := repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
+		buf, err = repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
 		rtest.OK(t, err)
-		rtest.Equals(t, len(buf), n)
 
 		rtest.Assert(t, len(buf) == len(data),
 			"number of bytes read back does not match: expected %d, got %d",
@@ -166,14 +164,9 @@ func TestLoadBlob(t *testing.T) {
 	// first, test with buffers that are too small
 	for _, testlength := range []int{length - 20, length, restic.CiphertextLength(length) - 1} {
 		buf = make([]byte, 0, testlength)
-		n, err := repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
-		if err == nil {
-			t.Errorf("LoadBlob() did not return an error for a buffer that is too small to hold the blob")
-			continue
-		}
-
-		if n != 0 {
-			t.Errorf("LoadBlob() returned an error and n > 0")
+		_, err := repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
+		if err != nil {
+			t.Errorf("LoadBlob() returned an error for a buffer that is too small to hold the blob")
 			continue
 		}
 	}
@@ -182,14 +175,14 @@ func TestLoadBlob(t *testing.T) {
 	base := restic.CiphertextLength(length)
 	for _, testlength := range []int{base, base + 7, base + 15, base + 1000} {
 		buf = make([]byte, 0, testlength)
-		n, err := repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
+		buf, err := repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
 		if err != nil {
 			t.Errorf("LoadBlob() returned an error for buffer size %v: %v", testlength, err)
 			continue
 		}
 
-		if n != length {
-			t.Errorf("LoadBlob() returned the wrong number of bytes: want %v, got %v", length, n)
+		if len(buf) != length {
+			t.Errorf("LoadBlob() returned the wrong number of bytes: want %v, got %v", length, len(buf))
 			continue
 		}
 	}
@@ -212,13 +205,13 @@ func BenchmarkLoadBlob(b *testing.B) {
 	b.SetBytes(int64(length))
 
 	for i := 0; i < b.N; i++ {
-		n, err := repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
+		buf, err := repo.LoadBlob(context.TODO(), restic.DataBlob, id, buf)
 		rtest.OK(b, err)
-		if n != length {
-			b.Errorf("wanted %d bytes, got %d", length, n)
+		if len(buf) != length {
+			b.Errorf("wanted %d bytes, got %d", length, len(buf))
 		}
 
-		id2 := restic.Hash(buf[:n])
+		id2 := restic.Hash(buf)
 		if !id.Equal(id2) {
 			b.Errorf("wrong data returned, wanted %v, got %v", id.Str(), id2.Str())
 		}

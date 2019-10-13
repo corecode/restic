@@ -129,7 +129,7 @@ func runStats(gopts GlobalOptions, args []string) error {
 	if countMode == countModeRawData {
 		// the blob handles have been collected, but not yet counted
 		for blobHandle := range stats.blobs {
-			blobSize, found := repo.LookupBlobSize(blobHandle.ID, blobHandle.Type)
+			blobSize, found := repo.LookupStoredBlobSize(blobHandle.ID, blobHandle.Type)
 			if !found {
 				return fmt.Errorf("blob %v not found", blobHandle)
 			}
@@ -218,7 +218,7 @@ func statsWalkTree(repo restic.Repository, stats *statsContainer) walker.WalkFun
 						}
 						if _, ok := stats.fileBlobs[nodePath][blobID]; !ok {
 							// is always a data blob since we're accessing it via a file's Content array
-							blobSize, found := repo.LookupBlobSize(blobID, restic.DataBlob)
+							blobSize, found := repo.LookupStoredBlobSize(blobID, restic.DataBlob)
 							if !found {
 								return true, fmt.Errorf("blob %s not found for tree %s", blobID, *node.Subtree)
 							}

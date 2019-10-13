@@ -24,7 +24,7 @@ type Repository interface {
 
 	Config() Config
 
-	LookupBlobSize(ID, BlobType) (uint, bool)
+	LookupStoredBlobSize(ID, BlobType) (uint, bool)
 
 	// List calls the function fn for each file of type t in the repository.
 	// When an error is returned by fn, processing stops and List() returns the
@@ -45,7 +45,7 @@ type Repository interface {
 	// new buffer will be allocated and returned.
 	LoadAndDecrypt(ctx context.Context, buf []byte, t FileType, id ID) (data []byte, err error)
 
-	LoadBlob(context.Context, BlobType, ID, []byte) (int, error)
+	LoadBlob(context.Context, BlobType, ID, []byte) ([]byte, error)
 	SaveBlob(context.Context, BlobType, []byte, ID) (ID, error)
 
 	LoadTree(context.Context, ID) (*Tree, error)
